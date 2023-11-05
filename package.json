@@ -30,7 +30,8 @@
   },
   "homepage": "https://github.com/Hyeed/cloud-vl",
   "dependencies": {
-    "express": "^4.18.2"
+    "express": "^4.18.2",
+    "systeminformation": "^5.21.13"
   },
   "devDependencies": {
     "@types/jest": "^29.5.6",
