@@ -1,0 +1,247 @@
+// Ce fichier est le résultat des différents tests de la découverte de TS et
+// des problèmes de l'API, avant un léger refactoring pour le rendre lisible.
+// Néanmoins, afin de ne pas perdre l'information concernant les bugs de l'API,
+// je le laisse dans le code source, avec un nom différent.
+
+
+
+
+// import { helloWorld } from './hello-world';
+
+// const greet = helloWorld();
+// console.log(greet);
+
+// import express, { Request, Response } from 'express';
+import express from 'express';
+// en gros là on import le namespace et les fonctions
+// donc le namespace peut pas être instancié, forcément
+// import { Systeminformation, getAllData, system } from "systeminformation";
+// ben ça c'est illégal
+// import { Systeminformation as si } from "systeminformation";
+// on importe juste le namespace
+// import { Systeminformation } from "systeminformation";
+// Là, on importe tout le module.
+// Mais en fait, pour définir l'interface, on a quand même besoin d'importer le namespace (!?)
+// et on peut pas utliser juste `si`...
+// Mais le "si" il est exporté nulle part dans la librairie.
+// Est-ce que ça veut dire que on peut juste mettre le nom qu'on veut ?
+// Réponse courte, oui. c'est littéralement le "import as" de Python.
+import si, { Systeminformation, networkInterfaces } from "systeminformation";
+
+const app = express();
+// to differentiate `/foo` and `/foo/`
+app.enable('strict routing');
+const port = process.env.PORT || 3000;
+
+app.use(express.json());
+
+// See interfaces at https://www.typescriptlang.org/docs/handbook/2/objects.html
+// + définition des objets de la lib sur github
+// https://github.com/sebhildebrandt/systeminformation/blob/master/lib/index.d.ts
+// Typesscript Coding guidelines say interfaces should NOT start with an I...
+interface ISystemInformation {
+  cpu: Systeminformation.CpuData;
+  system: Systeminformation.SystemData;
+  mem: Systeminformation.MemData;
+  os: Systeminformation.OsData;
+  currentLoad: Systeminformation.CurrentLoadData;
+  processes: Systeminformation.ProcessesData;
+  diskLayout: Systeminformation.DiskLayoutData[];
+  // Si je mets pas les deux, on a une erreur, parce que pour la fonction
+  // NetworkInterface(), c'est ça le type du Promise renvoyé...
+  // https://github.com/sebhildebrandt/systeminformation/blob/3a558b27e3439b2ea1b694d8100263f8d1e9f878/lib/index.d.ts#L992C23-L992C23
+  // En pratique, il renverra un Array comme on le souhaite, donc c'est pas très grave.
+  networkInterfaces: Systeminformation.NetworkInterfacesData | Systeminformation.NetworkInterfacesData[];
+  // networkInterfaces: si.Systeminformation.NetworkInterfacesData[];
+  }
+
+// L'autre problème, c'est que l'API est pas stable, par exemple pour ProcessesData
+// Quand on appelle la fonction processes, le Promise est pour l'interface
+// ProcessesData.
+// En revanche quand on appelle la fonction getAllData
+// Qui elle-même appelle getDynamicData
+// l'interface pour processes c'est ProcessesData[] !
+// Parce qu'il ne met pas les infos "running", "blocked" etc.
+// Il met directement les process.
+
+// De la même manière, getAllData appelle getStaticData, qui dans son interface
+// demande NetworkInterfacesData[] sans aucun problème.
+// et appele ensuite la fonction network.NetworkInterfaces sans problème.
+// Alors que quand on veut nous-même appeler NetworkInterfaces, la fonction
+// renvoie un Promise vers NetworkInterfacesData | NetworkInterfacesData[]
+// Donc ce qui fait que quand on appelle nous-même la fonction, impossible
+// de faire un objet qui respecte une interface qui soit uniquement l'un ou
+// uniquement l'autre. On est obligé de mettre l'union...
+
+// En fait, j'ai l'impression que c'est l'interface qui est pas la même selon
+// le fichier de définition des interfaces et la fonction exportée...
+
+
+/************************** TEST 3 **************************/
+// interface Test {
+//   net: Systeminformation.NetworkInterfacesData[];
+// }
+
+
+
+// MATHIS
+// interface ISystemInformation {
+//   cpu: Systeminformation.CpuData;
+//   system: Systeminformation.SystemData;
+//   mem: Systeminformation.MemData;
+//   os: Systeminformation.OsData;
+//   currentLoad: Systeminformation.CurrentLoadData;
+//   // Allons bon avec le code de Mathis il faut les [] avec le mien ça fonctionnait sans...
+//   processes: Systeminformation.ProcessesData[];
+//   diskLayout: Systeminformation.DiskLayoutData[];
+//   networkInterfaces: Systeminformation.NetworkInterfacesData[];
+// }
+
+// Ne fonctionne pas car récupère aussi la suivante
+// app.get('/api/v1/sysinfo/', (req, res) => {
+//   res.sendStatus(404);
+// })
+
+
+app.get('/api/v1/sysinfo', async (req, res) => {
+  // getAll is not recommended, e.g. on Windows, it takes almost 20s to
+  // answer for the first execution.
+
+  /************************** TEST 1 **************************/
+  // cpu: si.Systeminformation.CpuData;
+  // const cpu = await si.cpu();
+  // const system = await si.system();
+  // const
+
+  /************************** TEST 2 **************************/
+  // Le premier est le callback exécuté en mode 'callback'
+  // Le second est appelé en mode Promise qui return.
+  // si.cpu(data => {
+  //     console.log(data.manufacturer);
+  //   })
+  //   .then(data => {
+  //     console.log(data.manufacturer);
+  //   })
+  //   .catch(error => console.log(error));
+
+  /************************** TEST 3 **************************/
+  /*// Bon ça, ça fonctionne.
+  const net = await si.networkInterfaces();
+  // const net: Systeminformation.NetworkInterfacesData[] = await si.networkInterfaces();
+  // const net: Systeminformation.NetworkInterfacesData = await si.networkInterfaces();
+  // const net: Test = {
+  //   net: await si.networkInterfaces()
+  // };
+  console.log(net);
+
+  // console.log(net);
+  console.log(typeof net); // renverra object parce qu'il y a pas d'introspection
+  // Impossible de check avec instanceof sur une interface on va donc utiliser un type guard
+  // genre console.log(net instanceof Systeminformation.NetworkInterfacesData);
+  function instanceOfNetwork(object: any): object is Systeminformation.NetworkInterfacesData {
+    const result =
+      'iface' in object &&
+      'ifaceName' in object &&
+      'default' in object &&
+      'ip4' in object &&
+      'ip4subnet' in object &&
+      'ip6' in object &&
+      'ip6subnet' in object &&
+      'mac' in object &&
+      'internal' in object &&
+      'virtual' in object &&
+      'operstate' in object &&
+      'type' in object &&
+      'duplex' in object &&
+      'mtu' in object &&
+      'speed' in object &&
+      'dhcp' in object &&
+      'dnsSuffix' in object &&
+      'ieee8021xAuth' in object &&
+      'ieee8021xState' in object &&
+      'carrierChanges' in object;
+    return result;
+  }
+  function instanceOfNetworkArray(object: any): object is Systeminformation.NetworkInterfacesData[] {
+    if (object instanceof Array) {
+      for (const member of object) {
+        if (!instanceOfNetwork(member)) {
+          return false;
+        }
+      }
+      return true;
+    } else {
+      return false;
+    }
+  }
+
+  // Jusque là, tout va bien.
+  // En revanche, dès qu'on essaye de préciser le type, à la place de "any", on
+  // obtient une erreur. Il faut mettre les deux types, en UNION si on veut que ça passe...
+  // -> false
+  console.log("instanceOfNetwork(net):", instanceOfNetwork(net));
+  // -> true
+  console.log("instanceOfNetworkArray(net):", instanceOfNetworkArray(net));
+  // -> true
+  console.log("net instanceof Array", net instanceof Array);
+  // -> true
+  console.log("instanceOfNetwork(net[0]):", instanceOfNetwork(net[0]));
+  // -> false
+  console.log("instanceOfNetworkArray(net[0]):", instanceOfNetworkArray(net[0]));
+  res.send("Bonjour");*/
+
+  /************************** TEST 4 **************************/
+  // si.networkInterfaces()
+  // .then(data => { console.log(data); })
+  // .catch(error => { console.log(error); });
+  // res.send("Bonjour");
+
+  /************************** TEST 5 **************************/
+  const server_info: ISystemInformation = {
+    cpu: await si.cpu(),
+    system: await si.system(),
+    mem: await si.mem(),
+    os: await si.osInfo(),
+    currentLoad: await si.currentLoad(),
+    processes: await si.processes(),
+    diskLayout: await si.diskLayout(),
+    // networkInterfaces: await si.networkInterfaces(),
+    // Même en important directement la fonction, ça ne change rien. Le résultat est le même.
+    networkInterfaces: await networkInterfaces(),
+  }
+  res.send(server_info);
+
+  // MATHIS
+  // const sysinfo = await si.getAllData();
+  // res.send(sysinfo);
+  // const server_sysinfo: ISystemInformation = {
+  //   cpu: sysinfo.cpu,
+  //   system: sysinfo.system,
+  //   mem: sysinfo.mem,
+  //   os: sysinfo.os,
+  //   currentLoad: sysinfo.currentLoad,
+  //   // Ce qui est renvoyé correspond à ProcessesData, et pas à ProcessesData[]
+  //   // Donc en fait, il arrive à ne pas respecter sa propre interface ?!
+  //   // Et typescript s'en fout, parce que l'interface est "respectée" d'un
+  //   // point de vue que NOTRE ISystemMachin à un membre qui colle avec ce
+  //   // que demande l'interface donnée par le constructeur.
+  //   // Mais si la librarie nous renvoie PAS DU TOUT ce qu'elle dit qu'elle
+  //   // renvoie, alors là aucun problème...
+  //   processes: sysinfo.processes,
+  //   diskLayout: sysinfo.diskLayout,
+  //   // net est seulement disponible quand tu fais un appel à getAllData mdr
+  //   networkInterfaces: sysinfo.net
+  // };
+  // res.send(server_sysinfo);
+
+});
+
+app.get('*', (req, res) => {
+  // res.status(404).send('Sorry, this is an invalid URL.');
+  res.sendStatus(404);
+});
+
+app.listen(port, () => {
+  console.log(si.version());
+  console.log(`Listening on port ${port}`);
+});
