@@ -1,37 +1,55 @@
-# image de départ
-FROM alpine:3.15
+##########################################################
+# Base for all stages
+FROM alpine:3.15 as base
 
-# chemin de travail
-# Il aurait été intéressant d'installer dans le dossier /home/node, qu'on va créer littéralement 3 commandes plus bas...
-# Mais on trouve ce chemin dans beaucoup d'exemples donc bon.
 WORKDIR /usr/src/app
 
-# installation des paquets système
-# apk = Alipne Package Keeper
 RUN apk update && apk add nodejs npm
 RUN npm install -g pnpm
 
-# ajout utilisateur node et groupe node
-# RUN addgroup -g 1000 node && adduser -u 1000 -G node -s /bin/sh -D node
 RUN addgroup node && adduser -G node -s /bin/sh -D node
 
-# downgrade des privilèges
-# On le fait plus bas, sinon on ne peut pas installer les paquets avec pnpm, puiqu'il les installe en global. Bref. pnpm, c'est bien quand on dév sur sa propre machine, mais effectivement, mieux vaut utiliser npm si ça permet de diminuer les droits plus rapidement (les fichiers npm sont dans le WORKDIR quand les fichiers pnpm sont dans lib)
-# USER node
+# Étape évitée par docker init, qui monte les 2 fichiers directement dans
+# les commandes comme bind mount, donc évite de les copier.
+COPY ./package.json .
+COPY ./pnpm-lock.yaml .
 
-# copie des fichiers du dépôt
-COPY --chown=node:node . .
+##########################################################
+# Production dependencies
+FROM base as deps
 
-# installation des dépendances avec npm
-# Ne peuvent pas être utilisés parce que tsc est un package de dev -> ce sera pour le multistage
-# ARG NODE_ENV=production
-# RUN pnpm install --prod
-RUN pnpm install
+RUN pnpm install --prod --frozen-lockfile # Do NOT change the lockfile.
 
-# build avec npm
-RUN pnpm build
+##########################################################
+# Build the app -> dev dependencies
+FROM deps as build
 
+RUN pnpm install --frozen-lockfile
+
+COPY . .
+
+RUN pnpm run build
+
+##########################################################
+FROM base as final
+
+ENV NODE_ENV production
+
+# Downgrader privileges
 USER node
 
-# exécution
+# Pour pouvoir faire fonctionner les commandes
+# Mais pas utile puisque obligé de le faire plus haut puisque
+# pas mount les packages.json
+# COPY package.json .
+
+# Copy built files from build
+# And copy prod dependencies from deps
+COPY --from=deps --chown=node:node /usr/src/app/node_modules ./node_modules
+COPY --from=build --chown=node:node /usr/src/app/dist ./dist
+
+# Franchement, j'ai jamais compris la différence qu'il faisait lui.
+# Ça fonctionne toujours même sans qu'il soit là...
+EXPOSE 3000
+
 CMD pnpm start
