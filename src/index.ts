@@ -13,6 +13,10 @@ app.get('/api/v1/sysinfo', async (req, res) => {
   res.send(sysinfo);
 });
 
+app.get('/api/v1/flyio', async (req, res) => {
+  res.send("{Oui}");
+});
+
 app.get('*', (req, res) => {
   res.sendStatus(404);
 });
