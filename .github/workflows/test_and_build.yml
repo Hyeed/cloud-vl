@@ -1,13 +1,15 @@
 name: Test and Build on `main` commit
 
+# Pour trigger le truc quand on push sur la branch main
 on:
   push:
     branches:
-      - master
+      - main
 
 jobs:
   test:
-    if: github.ref == 'refs/heads/main'
+    # mieux d'utiliser on push branche
+    # if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
